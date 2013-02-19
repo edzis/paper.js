@@ -32,12 +32,27 @@ var ColorRaster = this.ColorRaster = Raster.extend(/** @lends Raster# */{
  * Whenever there is an _image, it must be taken into a canvas - colorization is only available in canvas
  */
 	setImage: function(image) {
-		this.base(image);
-		if(this._image !== null && !this._size.isZero()) {
-			var canvas = this.getCanvas();
-			this._image = null;
-			this.setCanvas(canvas);
+		if(image.width === 0)
+			return;
+
+		if (this._canvas) {
+			CanvasProvider.release(this._canvas);
+			this._canvas = null;
 		}
+
+/*#*/ if (options.browser) {
+		this._size = Size.create(image.naturalWidth, image.naturalHeight);
+/*#*/ } else if (options.server) {
+		this._size = Size.create(image.width, image.height);
+/*#*/ } // options.server
+
+		this._image = image;
+		this._canvas = this.getCanvas();
+		this._image = null;
+
+		this._sourceImageData = this.getImageData();
+		this._needsColorization = true;
+		this._changed(/*#=*/ Change.GEOMETRY | /*#=*/ Change.PIXELS);
 	},
 
 /**
