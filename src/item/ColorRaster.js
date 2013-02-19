@@ -33,7 +33,7 @@ var ColorRaster = this.ColorRaster = Raster.extend(/** @lends Raster# */{
  */
 	setImage: function(image) {
 		this.base(image);
-		if(this._image !== null) {
+		if(this._image !== null && !this._size.isZero()) {
 			var canvas = this.getCanvas();
 			this._image = null;
 			this.setCanvas(canvas);
