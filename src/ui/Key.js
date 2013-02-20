@@ -77,7 +77,7 @@ var Key = this.Key = new function() {
 				view.draw(true);
 		}
 	}
-
+/*
 	DomEvent.add(document, {
 		keydown: function(event) {
 			var code = event.which || event.keyCode;
@@ -122,6 +122,7 @@ var Key = this.Key = new function() {
 			}
 		}
 	});
+*/
 
 	return /** @lends Key */{
 		modifiers: modifiers,

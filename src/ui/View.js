@@ -633,14 +633,16 @@ var View = this.View = Base.extend(Callback, /** @lends View# */{
 	// our view. Only the mousedown events are installed on the view, as handled
 	// by _createHandlers below.
 
-	DomEvent.add(document, {
-		mousemove: mousemove,
-		mouseup: mouseup,
-		touchmove: mousemove,
-		touchend: mouseup,
-		selectstart: selectstart,
-		scroll: updateFocus
-	});
+	// DomEvent.add(document, {
+		// mousemove: mousemove,
+		// mouseup: mouseup,
+		// touchmove: mousemove,
+		// touchend: mouseup,
+		// selectstart: selectstart,
+		// scroll: updateFocus
+	// });
+	
+	DomEvent.add(document, {});
 
 	DomEvent.add(window, {
 		load: updateFocus
