@@ -10,18 +10,23 @@
  * @extends Raster
  */
 var ColorRaster = this.ColorRaster = Raster.extend(/** @lends Raster# */{
+	name: null,
+
 	_sourceImageData: null,
 	_color: null,
-	_colorScale: 1.0,
+	_colorScale: 1,
 	_needsColorization: false,
 
-	initialize: function(object, point) {
+	initialize: function(name, object, point) {
+		this.name = name;
+
 		this.base(object, point);
 	},
 
 
 	setCanvas: function(canvas) {
 		this.base(canvas);
+
 		if(this._canvas !== null) {
 			this._sourceImageData = this.getImageData();
 			this._needsColorization = true;
@@ -68,9 +73,10 @@ var ColorRaster = this.ColorRaster = Raster.extend(/** @lends Raster# */{
 * Colorize at the last moment possible - just before drawing
 **/
 	draw: function(ctx, param) {
-		if(this._needsColorization) {
+		if (this._needsColorization) {
 			this._colorize();
 		}
+
 		this.base(ctx, param)
 	},
 
@@ -80,11 +86,15 @@ var ColorRaster = this.ColorRaster = Raster.extend(/** @lends Raster# */{
 		return this._color;
 	},
 
+
 	setColor: function() {
 		var color = Color.read(arguments);
-		if (!color.equals(this._color)) {
-			this._color = color;
-			this._needsColorization = true;
+
+		if (color) {
+			if (!color.equals(this._color)) {
+				this._color = color;
+				this._needsColorization = true;
+			}
 		}
 	},
 
