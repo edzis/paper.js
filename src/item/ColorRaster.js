@@ -10,18 +10,23 @@
  * @extends Raster
  */
 var ColorRaster = this.ColorRaster = Raster.extend(/** @lends Raster# */{
+	name: null,
+
 	_sourceImageData: null,
 	_color: null,
-	_colorScale: 1.0,
+	_colorScale: 1,
 	_needsColorization: false,
 
-	initialize: function(object, point) {
+	initialize: function(name, object, point) {
+		this.name = name;
+
 		this.base(object, point);
 	},
 
 
 	setCanvas: function(canvas) {
 		this.base(canvas);
+
 		if(this._canvas !== null) {
 			this._sourceImageData = this.getImageData();
 			this._needsColorization = true;
@@ -32,12 +37,27 @@ var ColorRaster = this.ColorRaster = Raster.extend(/** @lends Raster# */{
  * Whenever there is an _image, it must be taken into a canvas - colorization is only available in canvas
  */
 	setImage: function(image) {
-		this.base(image);
-		if(this._image !== null) {
-			var canvas = this.getCanvas();
-			this._image = null;
-			this.setCanvas(canvas);
+		if(image.width === 0)
+			return;
+
+		if (this._canvas) {
+			CanvasProvider.release(this._canvas);
+			this._canvas = null;
 		}
+
+/*#*/ if (options.browser) {
+		this._size = Size.create(image.naturalWidth, image.naturalHeight);
+/*#*/ } else if (options.server) {
+		this._size = Size.create(image.width, image.height);
+/*#*/ } // options.server
+
+		this._image = image;
+		this._canvas = this.getCanvas();
+		this._image = null;
+
+		this._sourceImageData = this.getImageData();
+		this._needsColorization = true;
+		this._changed(/*#=*/ Change.GEOMETRY | /*#=*/ Change.PIXELS);
 	},
 
 /**
@@ -53,9 +73,10 @@ var ColorRaster = this.ColorRaster = Raster.extend(/** @lends Raster# */{
 * Colorize at the last moment possible - just before drawing
 **/
 	draw: function(ctx, param) {
-		if(this._needsColorization) {
+		if (this._needsColorization) {
 			this._colorize();
 		}
+
 		this.base(ctx, param)
 	},
 
@@ -65,11 +86,15 @@ var ColorRaster = this.ColorRaster = Raster.extend(/** @lends Raster# */{
 		return this._color;
 	},
 
+
 	setColor: function() {
 		var color = Color.read(arguments);
-		if (!color.equals(this._color)) {
-			this._color = color;
-			this._needsColorization = true;
+
+		if (color) {
+			if (!color.equals(this._color)) {
+				this._color = color;
+				this._needsColorization = true;
+			}
 		}
 	},
 
