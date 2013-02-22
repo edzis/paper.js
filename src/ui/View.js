@@ -649,11 +649,12 @@ var View = this.View = Base.extend(Callback, /** @lends View# */{
 	});
 
 	return {
-		_viewHandlers: {
-			mousedown: mousedown,
-			touchstart: mousedown,
-			selectstart: selectstart
-		},
+		// _viewHandlers: {
+			// mousedown: mousedown,
+			// touchstart: mousedown,
+			// selectstart: selectstart
+		// },
+		_viewHandlers: {},
 
 		statics: {
 			/**
