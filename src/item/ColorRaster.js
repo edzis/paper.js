@@ -12,8 +12,13 @@
 var ColorRaster = this.ColorRaster = Raster.extend(/** @lends Raster# */{
 	_sourceImageData: null,
 	_color: null,
-	_colorScale: 1,
+	_contrast: 1.5,
 	_needsColorization: false,
+	_colorSettings: {
+		sourceGray: 128,
+		resultScale: 0.83,
+		resultOffset: 12
+	},
 
 	initialize: function(object, point) {
 		this.base(object, point);
@@ -73,7 +78,7 @@ var ColorRaster = this.ColorRaster = Raster.extend(/** @lends Raster# */{
 			var offset = point.add(this._size.divide(2)).round();
 			var pixel = this.getPixel(offset);
 
-			if(pixel.alpha > 0) {
+			if (pixel.alpha > 0) {
 				return new HitResult('pixel', this, {
 					offset: offset,
 					// Inject as Bootstrap accessor, so #toString renders well too
@@ -116,13 +121,13 @@ var ColorRaster = this.ColorRaster = Raster.extend(/** @lends Raster# */{
 		}
 	},
 
-	getColorScale: function() {
-		return this._colorScale;
+	getContrast: function() {
+		return this._contrast;
 	},
 
-	setColorScale: function(colorScale) {
-		if (colorScale !== this._colorScale) {
-			this._colorScale = colorScale;
+	setContrast: function(contrast) {
+		if (contrast !== this._contrast) {
+			this._contrast = contrast;
 			this._needsColorization = true;
 		}
 	},
@@ -132,20 +137,26 @@ var ColorRaster = this.ColorRaster = Raster.extend(/** @lends Raster# */{
 */
 	_colorize: function() {
 		this._needsColorization = false;
-		if(this._sourceImageData && this._color) {
+
+		if (this._sourceImageData && this._color) {
 			// var resultData = this.getImageData(this.getSize());
 			var resultData = this._context.getImageData(0,0, this._size.width, this._size.height);
-			var scale =  this._colorScale;
+			var scale =  this._contrast;
 			var r = this._color.getRed()*0xFF;
 			var g = this._color.getGreen()*0xFF;
 			var b = this._color.getBlue()*0xFF;
-			var scaledGrayOffset = 128 * scale;
+			var scaledGrayOffset = this._colorSettings.sourceGray * scale;
+			var resultScale = this._colorSettings.resultScale;
+			var resultOffset = this._colorSettings.resultOffset;
+			
+			console.log(scale)
 
 			for (i = 0, l = this._sourceImageData.data.length; i < l; i+=4) {
 				sourceColor = this._sourceImageData.data[i];
-				resultData.data[i]		= sourceColor * scale - scaledGrayOffset + r; // red
-				resultData.data[i + 1]	= sourceColor * scale - scaledGrayOffset + g; // green
-				resultData.data[i + 2]	= sourceColor * scale - scaledGrayOffset + b; // blue
+
+				resultData.data[i]     = (sourceColor * scale - scaledGrayOffset + r) * resultScale + resultOffset; // red
+				resultData.data[i + 1] = (sourceColor * scale - scaledGrayOffset + g) * resultScale + resultOffset; // green
+				resultData.data[i + 2] = (sourceColor * scale - scaledGrayOffset + b) * resultScale + resultOffset; // blue
 			}
 
 			this._context.putImageData(resultData, 0, 0);
