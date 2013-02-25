@@ -10,16 +10,12 @@
  * @extends Raster
  */
 var ColorRaster = this.ColorRaster = Raster.extend(/** @lends Raster# */{
-	name: null,
-
 	_sourceImageData: null,
 	_color: null,
 	_colorScale: 1,
 	_needsColorization: false,
 
-	initialize: function(name, object, point) {
-		this.name = name;
-
+	initialize: function(object, point) {
 		this.base(object, point);
 	},
 
