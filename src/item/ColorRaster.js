@@ -65,6 +65,25 @@ var ColorRaster = this.ColorRaster = Raster.extend(/** @lends Raster# */{
 		this._changed(/*#=*/ Change.GEOMETRY | /*#=*/ Change.PIXELS);
 	},
 
+	_hitTest: function(point, options) {
+		if (point.isInside(this._getBounds())) {
+			var offset = point.add(this._size.divide(2)).round();
+			var pixel = this.getPixel(offset);
+
+			if(pixel.alpha > 0) {
+				return new HitResult('pixel', this, {
+					offset: offset,
+					// Inject as Bootstrap accessor, so #toString renders well too
+					color: {
+						get: function() {
+							return pixel;
+						}
+					}
+				});
+			}
+		}
+	},
+
 /**
 * Colorize at the last moment possible - just before drawing
 **/
