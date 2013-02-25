@@ -65,6 +65,9 @@ var ColorRaster = this.ColorRaster = Raster.extend(/** @lends Raster# */{
 		this._changed(/*#=*/ Change.GEOMETRY | /*#=*/ Change.PIXELS);
 	},
 
+/**
+* Modified version of Raster._hitTest() - checks early on if alpha is greater than 0
+*/
 	_hitTest: function(point, options) {
 		if (point.isInside(this._getBounds())) {
 			var offset = point.add(this._size.divide(2)).round();
