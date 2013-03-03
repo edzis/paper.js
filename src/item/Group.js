@@ -20,7 +20,10 @@
  * @extends Item
  */
 var Group = this.Group = Item.extend(/** @lends Group# */{
-	_type: 'group',
+	_type: 'Group',
+	_serializeFields: {
+		children: []
+	},
 
 	// DOCS: document new Group(item, item...);
 	/**

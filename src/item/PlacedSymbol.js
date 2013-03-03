@@ -19,10 +19,12 @@
  * @extends PlacedItem
  */
 var PlacedSymbol = this.PlacedSymbol = PlacedItem.extend(/** @lends PlacedSymbol# */{
-	_type: 'placedsymbol',
+	_type: 'PlacedSymbol',
+	_boundsSelected: true,
 	_serializeFields: {
 		symbol: null
 	},
+
 	/**
 	 * Creates a new PlacedSymbol Item.
 	 *
@@ -94,7 +96,7 @@ var PlacedSymbol = this.PlacedSymbol = PlacedItem.extend(/** @lends PlacedSymbol
 	},
 
 	clone: function() {
-		return this._clone(new PlacedSymbol(this.symbol, this._matrix.clone()));
+		return this._clone(new PlacedSymbol(this.symbol));
 	},
 
 	_getBounds: function(getter, matrix) {
@@ -106,11 +108,6 @@ var PlacedSymbol = this.PlacedSymbol = PlacedItem.extend(/** @lends PlacedSymbol
 
 	draw: function(ctx, param) {
 		Item.draw(this.symbol._definition, ctx, param);
-	},
-
-	drawSelected: function(ctx, matrix) {
-		Item.drawSelectedBounds(this.symbol._definition.getBounds(), ctx,
-				matrix);
 	}
 
 	// TODO: PlacedSymbol#embed()

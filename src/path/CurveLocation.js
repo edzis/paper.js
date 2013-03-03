@@ -209,12 +209,12 @@ var CurveLocation = this.CurveLocation = Base.extend(/** @lends CurveLocation# *
 	},
 
 	divide: function() {
-		var curve = this.getCurve();
+		var curve = this.getCurve(true);
 		return curve && curve.divide(this.getParameter(true));
 	},
 
 	split: function() {
-		var curve = this.getCurve();
+		var curve = this.getCurve(true);
 		return curve && curve.split(this.getParameter(true));
 	},
 
@@ -231,9 +231,9 @@ var CurveLocation = this.CurveLocation = Base.extend(/** @lends CurveLocation# *
 			parts.push('index: ' + index);
 		var parameter = this.getParameter();
 		if (parameter != null)
-			parts.push('parameter: ' + Base.formatFloat(parameter));
+			parts.push('parameter: ' + Format.number(parameter));
 		if (this._distance != null)
-			parts.push('distance: ' + Base.formatFloat(this._distance));
+			parts.push('distance: ' + Format.number(this._distance));
 		return '{ ' + parts.join(', ') + ' }';
 	}
 });

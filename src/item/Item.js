@@ -34,17 +34,18 @@ var Item = this.Item = Base.extend(Callback, {
 		}
 	}
 }, /** @lends Item# */{
+	_boundsSelected: false,
 	// Provide information about fields to be serialized, with their defaults
 	// that can be ommited.
 	_serializeFields: {
 		name: null,
-		children: [],
 		matrix: new Matrix(),
 		locked: false,
 		visible: true,
 		blendMode: 'normal',
 		opacity: 1,
-		guide: false
+		guide: false,
+		clipMask: false
 	},
 
 	initialize: function(point) {
@@ -205,6 +206,17 @@ var Item = this.Item = Base.extend(Callback, {
 				this._project._changes.push(entry);
 			}
 		}
+	},
+
+	/**
+	 * Sets those properties of the passed object literal on this item to
+	 * the values defined in the object literal, if the item has property of the
+	 * given name (or a setter defined for it).
+	 * @return {Item} the item itself.
+	 */
+	set: function(props) {
+		this._set(props);
+		return this;
 	},
 
 	/**
@@ -475,7 +487,8 @@ var Item = this.Item = Base.extend(Callback, {
 		if (this._children && !arguments[1]) {
 			for (var i = 0, l = this._children.length; i < l; i++)
 				this._children[i].setSelected(selected);
-		} else if ((selected = !!selected) != this._selected) {
+		}
+		if ((selected = !!selected) != this._selected) {
 			this._selected = selected;
 			this._project._updateSelection(this);
 			this._changed(/*#=*/ Change.ATTRIBUTE);
@@ -634,8 +647,12 @@ var Item = this.Item = Base.extend(Callback, {
 			// If we're returning 'bounds', create a LinkedRectangle that uses
 			// the setBounds() setter to update the Item whenever the bounds are
 			// changed:
-			return name == 'bounds' ? LinkedRectangle.create(this, 'setBounds',
-					bounds.x, bounds.y, bounds.width, bounds.height) : bounds;
+			return name == 'getBounds'
+					? LinkedRectangle.create(this, 'setBounds',
+							bounds.x, bounds.y, bounds.width, bounds.height) 
+					// Return a clone of the cahce, so modifications won't
+					// affect it.
+					: bounds;
 		};
 	},
 /** @lends Item# */{
@@ -675,7 +692,7 @@ var Item = this.Item = Base.extend(Callback, {
 			}
 		}
 		if (cache && this._bounds && this._bounds[cache])
-			return this._bounds[cache];
+			return this._bounds[cache].clone();
 		// If the result of concatinating the passed matrix with our internal
 		// one is an identity transformation, set it to null for faster
 		// processing
@@ -691,8 +708,6 @@ var Item = this.Item = Base.extend(Callback, {
 		if (cache) {
 			if (!this._bounds)
 				this._bounds = {};
-			// Put a separate instance into the cache, so modifications of the
-			// returned one won't affect it.
 			this._bounds[cache] = bounds.clone();
 		}
 		return bounds;
@@ -1140,6 +1155,9 @@ var Item = this.Item = Base.extend(Callback, {
 						{ name: Base.hyphenate(part), point: pt });
 		}
 
+		if (this._locked)
+			return null;
+
 		point = Point.read(arguments);
 		options = HitResult.getOptions(Base.read(arguments));
 		// Check if the point is withing roughBounds + tolerance, but only if
@@ -1253,10 +1271,18 @@ var Item = this.Item = Base.extend(Callback, {
 		// an Item#children array. Use Array.prototype.slice because
 		// in certain cases items is an arguments object
 		items = items && Array.prototype.slice.apply(items);
-		var i = index;
+		var children = this._children,
+			length = children.length,
+			i = index;
 		for (var j = 0, l = items && items.length; j < l; j++) {
-			if (this.insertChild(i, items[j], _cloning))
-				i++;
+			if (this.insertChild(i, items[j], _cloning)) {
+				// We need to keep track of how much the list actually grows,
+				// bcause we might be removing and inserting into the same list,
+				// in which case the size would not chage.
+				var newLength = children.length;
+				i += newLength - length;
+				length = newLength;
+			}
 		}
 		return i != index;
 	},
@@ -1682,7 +1708,7 @@ var Item = this.Item = Base.extend(Callback, {
 	 * @name Item#strokeJoin
 	 * @property
 	 * @default 'miter'
-	 * @type String ('miter', 'round', 'bevel')
+	 * @type String('miter', 'round', 'bevel')
 	 *
 	 *
 	 * @example {@paperscript height=120}
@@ -2052,10 +2078,12 @@ var Item = this.Item = Base.extend(Callback, {
 		this.setBounds(newBounds);
 	},
 
-	toString: function() {
-		return (this.constructor._name || 'Item') + (this._name
-				? " '" + this._name + "'"
-				: ' @' + this._id);
+	// DOCS: document exportJson (documented in @private Base)
+	// DOCS: document importJson
+	// DOCS: Figure out a way to group these together with importSvg / exportSvg
+
+	importJson: function(json) {
+		return this.addChild(Base.importJson(json));
 	},
 
 	/**
@@ -2507,10 +2535,6 @@ var Item = this.Item = Base.extend(Callback, {
 			ctx.globalAlpha = this._opacity;
 	},
 
-	drawSelected: function(ctx, matrix) {
-		// Do nothing
-	},
-
 	statics: {
 		drawSelectedBounds: function(bounds, ctx, matrix) {
 			var coords = matrix._transformCorners(bounds);
@@ -2547,7 +2571,7 @@ var Item = this.Item = Base.extend(Callback, {
 			// Exclude Raster items since they never draw a stroke and handle
 			// opacity by themselves (they also don't call _setStyles)
 			if (item._blendMode !== 'normal' || item._opacity < 1
-					&& item._type !== 'raster' && (item._type !== 'path'
+					&& item._type !== 'Raster' && (item._type !== 'Path'
 						|| item.getFillColor() && item.getStrokeColor())) {
 				var bounds = item.getStrokeBounds();
 				if (!bounds.width || !bounds.height)

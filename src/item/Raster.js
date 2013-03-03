@@ -18,7 +18,8 @@
  * @extends PlacedItem
  */
 var Raster = this.Raster = PlacedItem.extend(/** @lends Raster# */{
-	_type: 'raster',
+	_type: 'Raster',
+	_boundsSelected: true,
 	_serializeFields: {
 		source: null
 	},
@@ -275,7 +276,7 @@ var Raster = this.Raster = PlacedItem.extend(/** @lends Raster# */{
 		// See if the linked image is base64 encoded already, if so reuse it,
 		// otherwise try using canvas.toDataUrl()
 		var src = this._image && this._image.src;
-		if (/^data:/.test(src)) 
+		if (/^data:/.test(src))
 			return src;
 		var canvas = this.getCanvas();
 		return canvas ? canvas.toDataURL() : null;
@@ -486,10 +487,5 @@ var Raster = this.Raster = PlacedItem.extend(/** @lends Raster# */{
 			ctx.drawImage(element,
 					-this._size.width / 2, -this._size.height / 2);
 		}
-	},
-
-	drawSelected: function(ctx, matrix) {
-		Item.drawSelectedBounds(new Rectangle(this._size).setCenter(0, 0), ctx,
-				matrix);
 	}
 });

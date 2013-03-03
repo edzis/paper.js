@@ -15,27 +15,18 @@
  * Paper.js DOM to a Paper.js DOM.
  */
 new function() {
-	// Shortcut to Base.formatFloat
-	var formatFloat = Base.formatFloat,
+	// Shortcut to Format.number
+	var format = Format.number,
 		namespaces = {
 			href: 'http://www.w3.org/1999/xlink'
 		};
-
-	function formatPoint(point) {
-		return formatFloat(point.x) + ',' + formatFloat(point.y);
-	}
-
-	function formatRectangle(rect) {
-		return formatFloat(rect.x) + ',' + formatFloat(rect.y)
-			+ ',' + formatFloat(rect.width) + ',' + formatFloat(rect.height);
-	}
 
 	function setAttributes(node, attrs) {
 		for (var key in attrs) {
 			var val = attrs[key],
 				namespace = namespaces[key];
 			if (typeof val === 'number')
-				val = formatFloat(val);
+				val = format(val);
 			if (namespace) {
 				node.setAttributeNS(namespace, key, val);
 			} else {
@@ -81,52 +72,16 @@ new function() {
 				angle = decomposed.rotation,
 				scale = decomposed.scaling;
 			if (trans && !trans.isZero())
-				parts.push('translate(' + formatPoint(trans) + ')');
+				parts.push('translate(' + Format.point(trans) + ')');
 			if (!Numerical.isZero(scale.x - 1) || !Numerical.isZero(scale.y - 1))
-				parts.push('scale(' + formatPoint(scale) +')');
+				parts.push('scale(' + Format.point(scale) +')');
 			if (angle)
-				parts.push('rotate(' + formatFloat(angle) + ')');
+				parts.push('rotate(' + format(angle) + ')');
 			attrs.transform = parts.join(' ');
 		} else {
 			attrs.transform = 'matrix(' + matrix.getValues().join(',') + ')';
 		}
 		return attrs;
-	}
-
-	function getPath(path) {
-		var segments = path._segments,
-			style = path._style,
-			parts = [];
-
-		function addCurve(seg1, seg2, skipLine) {
-			var point1 = seg1._point,
-				point2 = seg2._point,
-				handle1 = seg1._handleOut,
-				handle2 = seg2._handleIn;
-			if (handle1.isZero() && handle2.isZero()) {
-				if (!skipLine) {
-					// L = lineto: moving to a point with drawing
-					parts.push('L' + formatPoint(point2));
-				}
-			} else {
-				// c = relative curveto: handle1, handle2 + end - start, end - start
-				var end = point2.subtract(point1);
-				parts.push('c' + formatPoint(handle1),
-					formatPoint(end.add(handle2)),
-					formatPoint(end));
-			}
-		}
-
-		parts.push('M' + formatPoint(segments[0]._point));
-		for (i = 0, l = segments.length  - 1; i < l; i++)
-			addCurve(segments[i], segments[i + 1], false);
-		// We only need to draw the connecting curve if it is not a line, and if
-		// the path is cosed and has a stroke color, or if it is filled.
-		if (path._closed && style._strokeColor || style._fillColor)
-			addCurve(segments[segments.length - 1], segments[0], true);
-		if (path._closed)
-			parts.push('z');
-		return parts.join(' ');
 	}
 
 	function determineAngle(path, segments, type, center) {
@@ -261,15 +216,14 @@ new function() {
 		case 'empty':
 			return null;
 		case 'path':
-			attrs = {
-				d: getPath(item)
-			};
+			var data = item.getPathData();
+			attrs = data && { d: data };
 			break;
 		case 'polyline':
 		case 'polygon':
 			var parts = [];
 			for(i = 0, l = segments.length; i < l; i++)
-				parts.push(formatPoint(segments[i]._point));
+				parts.push(Format.point(segments[i]._point));
 			attrs = {
 				points: parts.join(' ')
 			};
@@ -342,8 +296,8 @@ new function() {
 			break;
 		}
 		if (angle) {
-			attrs.transform = 'rotate(' + formatFloat(angle) + ','
-					+ formatPoint(center) + ')';
+			attrs.transform = 'rotate(' + format(angle) + ','
+					+ Format.point(center) + ')';
 			// Tell applyStyle() that to transform the gradient the other way
 			item._gradientMatrix = new Matrix().rotate(-angle, center);
 		}
@@ -351,12 +305,10 @@ new function() {
 	}
 
 	function exportCompoundPath(item) {
-		var attrs = getTransform(item, true),
-			children = item._children,
-			paths = [];
-		for (var i = 0, l = children.length; i < l; i++)
-			paths.push(getPath(children[i]));
-		attrs.d = paths.join(' ');
+		var attrs = getTransform(item, true);
+		var data = item.getPathData();
+		if (data)
+			attrs.d = data;
 		return createElement('path', attrs);
 	}
 
@@ -368,7 +320,7 @@ new function() {
 			bounds = definition.getBounds();
 		if (!symbolNode) {
 			symbolNode = createElement('symbol', {
-				viewBox: formatRectangle(bounds)
+				viewBox: Format.rectangle(bounds)
 			});
 			symbolNode.appendChild(exportSvg(definition));
 			setDefinition(symbol, symbolNode);
@@ -376,8 +328,8 @@ new function() {
 		attrs.href = '#' + symbolNode.id;
 		attrs.x += bounds.x;
 		attrs.y += bounds.y;
-		attrs.width = formatFloat(bounds.width);
-		attrs.height = formatFloat(bounds.height);
+		attrs.width = format(bounds.width);
+		attrs.height = format(bounds.height);
 		return createElement('use', attrs);
 	}
 
@@ -390,12 +342,13 @@ new function() {
 		var gradientNode = getDefinition(color);
 		if (!gradientNode) {
 			var gradient = color.gradient,
+				type = gradient._type,
 				matrix = item._gradientMatrix,
 				origin = color._origin.transform(matrix),
 				destination = color._destination.transform(matrix),
 				highlight = color._hilite && color._hilite.transform(matrix),
 				attrs;
-				if (gradient.type == 'radial') {
+				if (type == 'RadialGradient') {
 					attrs = {
 						cx: origin.x,
 						cy: origin.y,
@@ -414,7 +367,8 @@ new function() {
 					};
 				}
 			attrs.gradientUnits = 'userSpaceOnUse';
-			gradientNode = createElement(gradient.type + 'Gradient', attrs);
+			gradientNode = createElement(type[0].toLowerCase() + type.slice(1),
+					attrs);
 			var stops = gradient._stops;
 			for (var i = 0, l = stops.length; i < l; i++) {
 				var stop = stops[i],
@@ -435,13 +389,13 @@ new function() {
 	}
 
 	var exporters = {
-		group: exportGroup,
-		layer: exportGroup,
-		raster: exportRaster,
-		pointtext: exportText,
-		placedsymbol: exportPlacedSymbol,
-		path: exportPath,
-		compoundpath: exportCompoundPath
+		Group: exportGroup,
+		Layer: exportGroup,
+		Raster: exportRaster,
+		PointText: exportText,
+		PlacedSymbol: exportPlacedSymbol,
+		Path: exportPath,
+		CompoundPath: exportCompoundPath
 	};
 
 	function applyStyle(item, node) {
@@ -453,7 +407,7 @@ new function() {
 		if (item._name != null)
 			attrs.id = item._name;
 
-		Base.each(SvgStyles.properties, function(entry) {
+		Base.each(SvgStyles, function(entry) {
 			// Get a given style only if it differs from the value on the parent
 			// (A layer or group which can have style values in SVG).
 			var value = style[entry.get]();
@@ -472,7 +426,7 @@ new function() {
 						: entry.type === 'array'
 							? value.join(',')
 							: entry.type === 'number'
-								? formatFloat(value)
+								? format(value)
 								: value;
 			}
 		});
@@ -507,7 +461,7 @@ new function() {
 		// We can only use node nodes as defintion containers. Have the loop
 		// produce one if it's a single item of another type (when calling
 		// #exportSvg() on an item rather than a whole project)
-		var container = node.nodeName.toLowerCase() == 'svg' && node,
+		var container = node.nodeName == 'svg' && node,
 			firstChild = container ? container.firstChild : node;
 		for (var i in definitions.svgs) {
 			if (!container) {

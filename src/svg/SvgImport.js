@@ -30,6 +30,7 @@ new function() {
 		// Base.pick(base.value, base)
 		return base
 				? index !== undefined
+					// Item list? Look up by index:
 					? index < base.numberOfItems
 						? Base.pick((base = base.getItem(index)).value, base)
 						: null
@@ -56,56 +57,59 @@ new function() {
 		return value === 'none'
 				? null
 				: type === 'number'
-					? Base.toFloat(value)
+					? parseFloat(value)
 					: type === 'array'
 						? value ? value.split(/[\s,]+/g).map(parseFloat) : []
 						: type === 'color' && getDefinition(value)
 							|| value;
 	}
 
-	function createClipGroup(item, clip) {
-		clip.setClipMask(true);
-		return new Group(clip, item);
-	}
-
-	// Define importer functions for various SVG node types
+	// Importer functions for various SVG node types
 
 	function importGroup(node, type) {
 		var nodes = node.childNodes,
-			compound = type === 'clippath',
-			group = compound ? new CompoundPath() : new Group(),
-			project = group._project,
+			clip = type === 'clipPath',
+			item = clip ? new CompoundPath() : new Group(),
+			project = item._project,
 			currentStyle = project._currentStyle;
-		// Style on groups needs to be handled differently than all other items:
-		// We first apply the style to the group, then use it as the project's
+		// Style on items needs to be handled differently than all other items:
+		// We first apply the style to the item, then use it as the project's
 		// currentStyle, so it is used as a default for the creation of all
-		// nested items. importSvg then needs to check for groups and avoid
+		// nested items. importSvg then needs to check for items and avoid
 		// calling applyAttributes() again.
-		applyAttributes(group, node);
-		project._currentStyle = group._style.clone();
+		// Set the default color to black, since that's how SVG handles fills.
+		item.setFillColor('black');
+		if (!clip) {
+			item = applyAttributes(item, node);
+			project._currentStyle = item._style.clone();
+		}
 		for (var i = 0, l = nodes.length; i < l; i++) {
-			var child = nodes[i],
-				item;
-			if (child.nodeType == 1 && (item = importSvg(child))) {
+			var childNode = nodes[i],
+				child;
+			if (childNode.nodeType == 1 && (child = importSvg(childNode))) {
 				// If adding CompoundPaths to other CompoundPaths,
 				// we need to "unbox" them first:
-				if (compound && item instanceof CompoundPath) {
-					group.addChildren(item.removeChildren());
-					item.remove();
-				} else if (!(item instanceof Symbol)) {
-					group.addChild(item);
+				if (clip && child instanceof CompoundPath) {
+					item.addChildren(child.removeChildren());
+					child.remove();
+				} else if (!(child instanceof Symbol)) {
+					item.addChild(child);
 				}
 			}
 		}
+		// clip paths are reduced (unboxed) and their attributes applied at the
+		// end.
+		if (clip)
+			item = applyAttributes(item.reduce(), node);
 		// Restore currentStyle
 		project._currentStyle = currentStyle;
-		if (type == 'defs') {
-			// I don't think we need to add defs to the DOM. But we might want
-			// to use Symbols for them?
-			group.remove();
-			group = null;
+		if (clip || type === 'defs') {
+			// We don't want the defs in the DOM. But we might want to use
+			// Symbols for them to save memory?
+			item.remove();
+			item = null;
 		}
-		return group;
+		return item;
 	}
 
 	function importPoly(node, type) {
@@ -120,106 +124,14 @@ new function() {
 	}
 
 	function importPath(node) {
-		var path = new Path(),
-			list = node.pathSegList,
-			compoundPath, lastPoint;
-		for (var i = 0, l = list.numberOfItems; i < l; i++) {
-			var segment = list.getItem(i),
-				segType = segment.pathSegType,
-				isRelative = segType % 2 == 1;
-			if (segType === /*#=*/ SVGPathSeg.PATHSEG_UNKNOWN)
-				continue;
-			if (!path.isEmpty())
-				lastPoint = path.getLastSegment().getPoint();
-			var relative = isRelative && !path.isEmpty()
-					? lastPoint
-					: Point.create(0, 0);
-			// Horizontal or vertical lineto commands, so fill in the
-			// missing x or y value:
-			var coord = (segType == /*#=*/ SVGPathSeg.PATHSEG_LINETO_HORIZONTAL_ABS
-					|| segType == /*#=*/ SVGPathSeg.PATHSEG_LINETO_HORIZONTAL_REL) && 'y'
-					|| (segType == /*#=*/ SVGPathSeg.PATHSEG_LINETO_VERTICAL_ABS
-					|| segType == /*#=*/ SVGPathSeg.PATHSEG_LINETO_VERTICAL_REL) && 'x';
-			if (coord)
-				segment[coord] = isRelative ? 0 : lastPoint[coord];
-			var point = Point.create(segment.x, segment.y).add(relative);
-			switch (segType) {
-			case /*#=*/ SVGPathSeg.PATHSEG_CLOSEPATH:
-				path.closePath();
-				break;
-			case /*#=*/ SVGPathSeg.PATHSEG_MOVETO_ABS:
-			case /*#=*/ SVGPathSeg.PATHSEG_MOVETO_REL:
-				if (!path.isEmpty() && !compoundPath) {
-					compoundPath = new CompoundPath([path]);
-				}
-				if (compoundPath) {
-					path = new Path();
-					compoundPath.addChild(path);
-				}
-				path.moveTo(point);
-				break;
-			case /*#=*/ SVGPathSeg.PATHSEG_LINETO_ABS:
-			case /*#=*/ SVGPathSeg.PATHSEG_LINETO_REL:
-			case /*#=*/ SVGPathSeg.PATHSEG_LINETO_HORIZONTAL_ABS:
-			case /*#=*/ SVGPathSeg.PATHSEG_LINETO_HORIZONTAL_REL:
-			case /*#=*/ SVGPathSeg.PATHSEG_LINETO_VERTICAL_ABS:
-			case /*#=*/ SVGPathSeg.PATHSEG_LINETO_VERTICAL_REL:
-				path.lineTo(point);
-				break;
-			case /*#=*/ SVGPathSeg.PATHSEG_CURVETO_CUBIC_ABS:
-			case /*#=*/ SVGPathSeg.PATHSEG_CURVETO_CUBIC_REL:
-				path.cubicCurveTo(
-					relative.add(segment.x1, segment.y1),
-					relative.add(segment.x2, segment.y2),
-					point
-				);
-				break;
-			case /*#=*/ SVGPathSeg.PATHSEG_CURVETO_QUADRATIC_ABS:
-			case /*#=*/ SVGPathSeg.PATHSEG_CURVETO_QUADRATIC_REL:
-				path.quadraticCurveTo(
-					relative.add(segment.x1, segment.y1),
-					point
-				);
-				break;
-			// TODO: Implement Arcs: ttp://www.w3.org/TR/SVG/implnote.html
-			// case /*#=*/ SVGPathSeg.PATHSEG_ARC_ABS:
-			// case /*#=*/ SVGPathSeg.PATHSEG_ARC_REL:
-			//	break;
-			case /*#=*/ SVGPathSeg.PATHSEG_CURVETO_CUBIC_SMOOTH_ABS:
-			case /*#=*/ SVGPathSeg.PATHSEG_CURVETO_CUBIC_SMOOTH_REL:
-				var prev = list.getItem(i - 1),
-					control = lastPoint.add(lastPoint.subtract(
-						Point.create(prev.x2, prev.y2)
-							.subtract(prev.x, prev.y)
-							.add(lastPoint)));
-				path.cubicCurveTo(
-					control,
-					relative.add(segment.x2, segment.y2),
-					point);
-				break;
-			case /*#=*/ SVGPathSeg.PATHSEG_CURVETO_QUADRATIC_SMOOTH_ABS:
-			case /*#=*/ SVGPathSeg.PATHSEG_CURVETO_QUADRATIC_SMOOTH_REL:
-				var control,
-					j = i;
-				for (; j >= 0; j--) {
-					var prev = list.getItem(j);
-					if (prev.pathSegType === /*#=*/ SVGPathSeg.PATHSEG_CURVETO_QUADRATIC_ABS ||
-							prev.pathSegType === /*#=*/ SVGPathSeg.PATHSEG_CURVETO_QUADRATIC_REL) {
-						control = Point.create(prev.x1, prev.y1)
-								.subtract(prev.x, prev.y)
-								.add(path._segments[j].getPoint());
-						break;
-					}
-				}
-				for (; j < i; ++j) {
-					var anchor = path._segments[j].getPoint();
-					control = anchor.add(anchor.subtract(control));
-				}
-				path.quadraticCurveTo(control, point);
-				break;
-			}
-		}
-		return compoundPath || path;
+		// Get the path data, and determine wether it is a compound path or a
+		// normal path based on the amount of moveTo commands inside it.
+		var data = node.getAttribute('d'),
+			path = data.match(/m/gi).length > 1
+					? new CompoundPath()
+					: new Path();
+		path.setPathData(data);
+		return path;
 	}
 
 	function importGradient(node, type) {
@@ -230,11 +142,10 @@ new function() {
 			if (child.nodeType == 1)
 				stops.push(applyAttributes(new GradientStop(), child));
 		}
-		var gradient = new Gradient(stops),
-			isRadial = type == 'radialgradient',
+		var isRadial = type === 'radialGradient',
+			gradient = new (isRadial ? RadialGradient : LinearGradient)(stops),
 			origin, destination, highlight;
 		if (isRadial) {
-			gradient.type = 'radial';
 			origin = getPoint(node, 'cx', 'cy');
 			destination = origin.add(getValue(node, 'r'), 0);
 			highlight = getPoint(node, 'fx', 'fy', true);
@@ -254,7 +165,7 @@ new function() {
 		g: importGroup,
 		// http://www.w3.org/TR/SVG/struct.html#NewDocument
 		svg: importGroup,
-		clippath: importGroup,
+		clipPath: importGroup,
 		// http://www.w3.org/TR/SVG/shapes.html#PolygonElement
 		polygon: importPoly,
 		// http://www.w3.org/TR/SVG/shapes.html#PolylineElement
@@ -262,9 +173,9 @@ new function() {
 		// http://www.w3.org/TR/SVG/paths.html
 		path: importPath,
 		// http://www.w3.org/TR/SVG/pservers.html#LinearGradients
-		lineargradient: importGradient,
+		linearGradient: importGradient,
 		// http://www.w3.org/TR/SVG/pservers.html#RadialGradients
-		radialgradient: importGradient,
+		radialGradient: importGradient,
 
 		// http://www.w3.org/TR/SVG/struct.html#ImageElement
 		image: function (node) {
@@ -281,7 +192,8 @@ new function() {
 
 		// http://www.w3.org/TR/SVG/struct.html#SymbolElement
 		symbol: function(node, type) {
-			return new Symbol(importGroup(node, type));
+			// Pass true for dontCenter:
+			return new Symbol(importGroup(node, type), true);
 		},
 
 		// http://www.w3.org/TR/SVG/struct.html#DefsElement
@@ -291,14 +203,19 @@ new function() {
 		use: function(node, type) {
 			// Note the namespaced xlink:href attribute is just called href
 			// as a property on node.
-			// TODO: Should getValue become namespace aware?
+			// TODO: Support overflow and width, height, in combination with
+			// overflow: hidden. Paper.js currently does not suport PlacedSymbol
+			// clipping, but perhaps it should?
 			var id = (getValue(node, 'href') || '').substring(1),
-				definition = definitions[id];
+				definition = definitions[id],
+				point = getPoint(node, 'x', 'y');
 			// Use place if we're dealing with a symbol:
 			return definition
 					? definition instanceof Symbol
-						? definition.place()
-						: definition.clone()
+						// When placing symbols, we nee to take both point and
+						// matrix into account. This just does the right thing:
+						? definition.place(point)
+						: definition.clone().translate(point)
 					: null;
 		},
 
@@ -343,10 +260,183 @@ new function() {
 			// lengthAdjust:
 			var text = new PointText(getPoint(node, 'x', 'y', false, 0)
 					.add(getPoint(node, 'dx', 'dy', false, 0)));
-			text.setContent(node.textContent || '');
+			text.setContent(node.textContent.trim() || '');
 			return text;
 		}
 	};
+
+	// Attributes and Styles
+
+	// NOTE: Parmeter sequence for all apply*() functions is: 
+	// (item, value, name, node) rather than (item, node, name, value),
+	// so we can ommit the less likely parameters from right to left.
+
+	function applyTransform(item, value, name, node) {
+		// http://www.w3.org/TR/SVG/types.html#DataTypeTransformList
+		var transforms = node[name].baseVal,
+			matrix = new Matrix();
+		for (var i = 0, l = transforms.numberOfItems; i < l; i++) {
+			var mx = transforms.getItem(i).matrix;
+			matrix.concatenate(
+				new Matrix(mx.a, mx.b, mx.c, mx.d, mx.e, mx.f));
+		}
+		item.transform(matrix);
+	}
+
+	function applyOpacity(item, value, name) {
+		// http://www.w3.org/TR/SVG/painting.html#FillOpacityProperty
+		// http://www.w3.org/TR/SVG/painting.html#StrokeOpacityProperty
+		var color = item._style[name === 'fill-opacity' ? 'getFillColor'
+				: 'getStrokeColor']();
+		if (color)
+			color.setAlpha(parseFloat(value));
+	}
+
+	function applyTextAttribute(item, apply) {
+		if (item instanceof TextItem) {
+			apply(item);
+		} else if (item instanceof Group) {
+			// Text styles need to be recursively passed down to children that
+			// might be TextItems explicitely.
+			var children = item._children;
+			for (var i = 0, l = children.length; i < l; i++)
+				apply(children[i]);
+		}
+	}
+
+	// Create apply-functions for attributes, and merge in those for SvgStlyes:
+	var attributes = Base.each(SvgStyles, function(entry) {
+		this[entry.attribute] = function(item, value, name, node) {
+			item._style[entry.set](convertValue(value, entry.type));
+		};
+	}, {
+		id: function(item, value) {
+			definitions[value] = item;
+			if (item.setName)
+				item.setName(value);
+		},
+
+		'clip-path': function(item, value) {
+			// http://www.w3.org/TR/SVG/masking.html#ClipPathProperty
+			var clip = getDefinition(value);
+			if (clip) {
+				clip = clip.clone();
+				clip.setClipMask(true);
+				return new Group(clip, item);
+			}
+		},
+
+		gradientTransform: applyTransform,
+		transform: applyTransform,
+
+		opacity: function(item, value) {
+			// http://www.w3.org/TR/SVG/masking.html#OpacityProperty
+			item.setOpacity(parseFloat(value));
+		},
+
+		'fill-opacity': applyOpacity,
+		'stroke-opacity': applyOpacity,
+
+		'font-family': function(item, value) {
+			applyTextAttribute(item, function(item) {
+				item.setFont(value.split(',')[0].replace(/^\s+|\s+$/g, ''));
+			});
+		},
+
+		'font-size': function(item, value) {
+			applyTextAttribute(item, function(item) {
+				item.setFontSize(parseFloat(value));
+			});
+		},
+
+		'text-anchor': function(item, value) {
+			applyTextAttribute(item, function(item) {
+				// http://www.w3.org/TR/SVG/text.html#TextAnchorProperty
+				item.setJustification({
+					start: 'left',
+					middle: 'center',
+					end: 'right'
+				}[value]);
+			});
+		},
+
+		visibility: function(item, value) {
+			item.setVisible(value === 'visible');
+		},
+
+		'stop-color': function(item, value) {
+			// http://www.w3.org/TR/SVG/pservers.html#StopColorProperty
+			item.setColor(value);
+		},
+
+		'stop-opacity': function(item, value) {
+			// http://www.w3.org/TR/SVG/pservers.html#StopOpacityProperty
+			// NOTE: It is important that this is applied after stop-color!
+			if (item._color)
+				item._color.setAlpha(parseFloat(value));
+		},
+
+		offset: function(item, value) {
+			// http://www.w3.org/TR/SVG/pservers.html#StopElementOffsetAttribute
+			var percentage = value.match(/(.*)%$/);
+			item.setRampPoint(percentage ? percentage[1] / 100 : value);
+		},
+
+		viewBox: function(item, value, name, node, styles) {
+			// http://www.w3.org/TR/SVG/coords.html#ViewBoxAttribute
+			// TODO: implement preserveAspectRatio attribute
+			// viewBox will be applied both to the group that's created for the
+			// content in Symbol.definition, and the Symbol itself.
+			var rect = Rectangle.create.apply(this, convertValue(value, 'array')),
+				size = getSize(node, 'width', 'height', true);
+			if (item instanceof Group) {
+				// This is either a top-level svg node, or the container for a
+				// symbol.
+				var scale = size ? rect.getSize().divide(size) : 1,
+					matrix = new Matrix().translate(rect.getPoint()).scale(scale);
+				item.transform(matrix.inverted());
+			} else if (item instanceof Symbol) {
+				// The symbol is wrapping a group. Note that viewBox was already
+				// applied to the group, and above code was executed for it.
+				// All that is left to handle here on the Symbol level is
+				// clipping. We can't do it at group level because
+				// applyAttributes() gets called for groups before their
+				// children are added, for styling reasons. See importGroup()
+				if (size)
+					rect.setSize(size);
+				var clip = getAttribute(node, 'overflow', styles) != 'visible',
+					group = item._definition;
+				if (clip && !rect.contains(group.getBounds())) {
+					// Add a clip path at the top of this symbol's group
+					clip = new Path.Rectangle(rect).transform(group._matrix);
+					clip.setClipMask(true);
+					group.addChild(clip);
+				}
+			}
+		}
+	});
+
+	function getAttribute(node, name, styles) {
+		// First see if the given attribute is defined.
+		var attr = node.attributes[name],
+			value = attr && attr.value;
+		if (!value) {
+			// Fallback to using styles. See if there is a style, either set
+			// directly on the object or applied to it through CSS rules.
+			// We also need to filter out inheritance from their parents.
+			var style = Base.camelize(name);
+			value = node.style[style];
+			if (!value && styles.node[style] !== styles.parent[style])
+				value = styles.node[style];
+		}
+		// Return undefined if attribute is not defined, but null if it's
+		// defined as not set (e.g. fill / stroke).
+		return !value
+				? undefined
+				: value === 'none'
+					? null
+					: value;
+	}
 
 	/**
 	 * Converts various SVG styles and attributes into Paper.js styles and
@@ -357,173 +447,39 @@ new function() {
 	 */
 	function applyAttributes(item, node) {
 		// SVG attributes can be set both as styles and direct node attributes,
-		// so we need to parse both
-		for (var i = 0, l = node.style.length; i < l; i++) {
-			var name = node.style[i];
-			item = applyAttribute(item, node, name, node.style[Base.camelize(name)]);
-		}
-		for (var i = 0, l = node.attributes.length; i < l; i++) {
-			var attr = node.attributes[i];
-			item = applyAttribute(item, node, attr.name, attr.value);
-		}
+		// so we need to handle both.
+		var styles = {
+			node: DomElement.getStyles(node) || {},
+			parent: DomElement.getStyles(node.parentNode) || {}
+		};
+		Base.each(attributes, function(apply, name) {
+			var value = getAttribute(node, name, styles);
+			if (value !== undefined)
+				item = Base.pick(apply(item, value, name, node, styles), item);
+		});
 		return item;
-	}
-
-	/**
-	 * Parses an SVG style attibute and applies it to a Paper.js item.
-	 *
-	 * @param {SVGSVGElement} node an SVG node
-	 * @param {Item} item the item to apply the style or attribute to.
-	 * @param {String} name an SVG style name
-	 * @param value the value of the SVG style
-	 */
-	 function applyAttribute(item, node, name, value) {
-		if (value == null)
-			return item;
-		var entry = SvgStyles.attributes[name];
-		if (entry) {
-			item._style[entry.set](convertValue(value, entry.type));
-		} else {
-			switch (name) {
-			case 'id':
-				definitions[value] = item;
-				if (item.setName)
-					item.setName(value);
-				break;
-			// http://www.w3.org/TR/SVG/masking.html#ClipPathProperty
-			case 'clip-path':
-				item = createClipGroup(item,
-					getDefinition(value).clone().reduce());
-				break;
-			// http://www.w3.org/TR/SVG/types.html#DataTypeTransformList
-			case 'gradientTransform':
-			case 'transform':
-				var transforms = node[name].baseVal,
-					matrix = new Matrix();
-				for (var i = 0, l = transforms.numberOfItems; i < l; i++) {
-					var mx = transforms.getItem(i).matrix;
-					matrix.concatenate(
-						new Matrix(mx.a, mx.b, mx.c, mx.d, mx.e, mx.f));
-				}
-				item.transform(matrix);
-				break;
-			// http://www.w3.org/TR/SVG/pservers.html#StopOpacityProperty
-			case 'stop-opacity':
-			// http://www.w3.org/TR/SVG/masking.html#OpacityProperty
-			case 'opacity':
-				var opacity = Base.toFloat(value);
-				if (name === 'stop-opacity') {
-					item.color.setAlpha(opacity);
-				} else {
-					item.setOpacity(opacity);
-				}
-				break;
-			// http://www.w3.org/TR/SVG/painting.html#FillOpacityProperty
-			case 'fill-opacity':
-			// http://www.w3.org/TR/SVG/painting.html#StrokeOpacityProperty
-			case 'stroke-opacity':
-				var color = item[name == 'fill-opacity' ? 'getFillColor'
-						: 'getStrokeColor']();
-				if (color)
-					color.setAlpha(Base.toFloat(value));
-				break;
-			case 'visibility':
-				item.setVisible(value === 'visible');
-				break;
-			case 'font':
-			case 'font-family':
-			case 'font-size':
-			// http://www.w3.org/TR/SVG/text.html#TextAnchorProperty
-			case 'text-anchor':
-				applyTextAttribute(item, node, name, value);
-				break;
-			// http://www.w3.org/TR/SVG/pservers.html#StopColorProperty
-			case 'stop-color':
-				item.setColor(value);
-				break;
-			// http://www.w3.org/TR/SVG/pservers.html#StopElementOffsetAttribute
-			case 'offset':
-				var percentage = value.match(/(.*)%$/);
-				item.setRampPoint(percentage ? percentage[1] / 100 : value);
-				break;
-			// http://www.w3.org/TR/SVG/coords.html#ViewBoxAttribute
-			// TODO: implement preserveAspectRatio attribute
-			case 'viewBox':
-				if (item instanceof Symbol)
-					break;
-				var values = convertValue(value, 'array'),
-					rectangle = Rectangle.create.apply(this, values),
-					size = getSize(node, 'width', 'height', true),
-					scale = size ? rectangle.getSize().divide(size) : 1,
-					offset = rectangle.getPoint(),
-					matrix = new Matrix().translate(offset).scale(scale);
-				item.transform(matrix.inverted());
-				if (size)
-					rectangle.setSize(size);
-				rectangle.setPoint(0);
-				// TODO: the viewbox does not always need to be clipped
-				item = createClipGroup(item, new Path.Rectangle(rectangle));
-				break;
-			}
-		}
-		return item;
-	}
-
-	function applyTextAttribute(item, node, name, value) {
-		if (item instanceof TextItem) {
-			switch (name) {
-			case 'font':
-				// TODO: Verify if there is not another way?
-				var text = document.createElement('span');
-				text.style.font = value;
-				for (var i = 0; i < text.style.length; i++) {
-					var name = text.style[i];
-					item = applyAttribute(item, node, name, text.style[name]);
-				}
-				break;
-			case 'font-family':
-				item.setFont(value.split(',')[0].replace(/^\s+|\s+$/g, ''));
-				break;
-			case 'font-size':
-				item.setFontSize(Base.toFloat(value));
-				break;
-			case 'text-anchor':
-				item.setJustification({
-					start: 'left',
-					middle: 'center',
-					end: 'right'
-				}[value]);
-				break;
-			}
-		} else if (item instanceof Group) {
-			// Text styles need to be recursively passed down to children that
-			// might be TextItems explicitely.
-			var children = item._children;
-			for (var i = 0, l = children.length; i < l; i++) {
-				applyTextAttribute(children[i], node, name, value);
-			}
-		}
 	}
 
 	var definitions = {};
 	function getDefinition(value) {
-		var match = value.match(/\(#([^)']+)/);
+		// When url() comes from a style property, '#'' seems to be missing on 
+		// WebKit, so let's make it optional here:
+		var match = value && value.match(/\((?:#|)([^)']+)/);
         return match && definitions[match[1]];
 	}
 
 	function importSvg(node, clearDefs) {
-		var type = node.nodeName.toLowerCase(),
+		var type = node.nodeName,
 			importer = importers[type],
 			item = importer && importer(node, type);
 		// See importGroup() for an explanation of this filtering:
-		if (item && item._type !== 'group')
+		if (item && item._type !== 'Group')
 			item = applyAttributes(item, node);
 		// Clear definitions at the end of import?
 		if (clearDefs)
 			definitions = {};
 		return item;
 	}
-
 
 	Item.inject(/** @lends Item# */{
 		/**

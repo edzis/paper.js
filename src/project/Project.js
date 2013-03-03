@@ -61,6 +61,7 @@ var Project = this.Project = PaperScopeItem.extend(/** @lends Project# */{
 		// Change tracking, not in use for now. Activate once required:
 		// this._changes = [];
 		// this._changesById = {};
+		this.options = {};
 	},
 
 	_serialize: function(options, dictionary) {
@@ -167,6 +168,15 @@ var Project = this.Project = PaperScopeItem.extend(/** @lends Project# */{
 		return items;
 	},
 
+	// DOCS: Project#options
+	/**
+	 * <b>options.handleSize:</b> 
+	 * <b>options.hitTolerance:</b>
+	 *
+	 * @name Project#options
+	 * @type Object
+	 */
+
 	// TODO: Implement setSelectedItems?
 
 	_updateSelection: function(item) {
@@ -248,6 +258,14 @@ var Project = this.Project = PaperScopeItem.extend(/** @lends Project# */{
 		return null;
 	},
 
+	// DOCS: document exportJson (documented in @private Base)
+	// DOCS: document importJson
+	// DOCS: Figure out a way to group these together with importSvg / exportSvg
+
+	importJson: function(json) {
+		return Base.importJson(json);
+	},
+
 	/**
 	 * {@grouptitle Project Hierarchy}
 	 *
@@ -318,8 +336,17 @@ var Project = this.Project = PaperScopeItem.extend(/** @lends Project# */{
 			ctx.strokeStyle = ctx.fillStyle = '#009dec';
 			for (var id in this._selectedItems) {
 				var item = this._selectedItems[id];
-				if (item._drawCount === this._drawCount)
-					item.drawSelected(ctx, getGlobalMatrix(item, matrix.clone()));
+				if (item._drawCount === this._drawCount
+						&& (item.drawSelected || item._boundsSelected)) {
+					var mx = getGlobalMatrix(item, matrix.clone());
+					if (item.drawSelected)
+						item.drawSelected(ctx, mx);
+					if (item._boundsSelected)
+						// We need to call the internal _getBounds, to get non-
+						// transformed bounds.
+						Item.drawSelectedBounds(item._getBounds('getBounds'),
+								ctx, mx);
+				}
 			}
 			ctx.restore();
 		}

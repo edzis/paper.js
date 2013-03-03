@@ -38,8 +38,6 @@
  * matrix multiplication).
  */
 var Matrix = this.Matrix = Base.extend(/** @lends Matrix# */{
-	_type: 'matrix',
-
 	/**
 	 * Creates a 2D affine transform.
 	 *
@@ -261,7 +259,7 @@ var Matrix = this.Matrix = Base.extend(/** @lends Matrix# */{
 	 * @return {String} A string representation of this transform.
 	 */
 	toString: function() {
-		var format = Base.formatFloat;
+		var format = Format.number;
 		return '[[' + [format(this._a), format(this._b),
 					format(this._tx)].join(', ') + '], ['
 				+ [format(this._c), format(this._d),

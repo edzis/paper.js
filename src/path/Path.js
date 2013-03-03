@@ -19,10 +19,9 @@
  */
 // DOCS: Explain that path matrix is always applied with each transformation.
 var Path = this.Path = PathItem.extend(/** @lends Path# */{
-	_type: 'path',
+	_type: 'Path',
 	_serializeFields: {
-		segments: [],
-		closed: false
+		pathData: ''
 	},
 
 	/**
@@ -139,7 +138,7 @@ var Path = this.Path = PathItem.extend(/** @lends Path# */{
 	 * @type Curve[]
 	 * @bean
 	 */
-	getCurves: function(/* includeFill */) {
+	getCurves: function() {
 		var curves = this._curves,
 			segments = this._segments;
 		if (!curves) {
@@ -149,16 +148,6 @@ var Path = this.Path = PathItem.extend(/** @lends Path# */{
 				curves[i] = Curve.create(this, segments[i],
 					// Use first segment for segment2 of closing curve
 					segments[i + 1] || segments[0]);
-		}
-		// If we're asked to include the closing curve for fill, even if the
-		// path is not closed for stroke, create a new uncached array and add
-		// the closing curve. Used in Path#contains()
-		// TODO: This is not consistent with the filling in Illustrator. 
-		// I suggest to only fill closed paths (lehni).
-		if (arguments[0] && !this._closed && this._style._fillColor) {
-			curves = curves.concat([
-				Curve.create(this, segments[segments.length - 1], segments[0])
-			]);
 		}
 		return curves;
 	},
@@ -182,6 +171,56 @@ var Path = this.Path = PathItem.extend(/** @lends Path# */{
 	getLastCurve: function() {
 		var curves = this.getCurves();
 		return curves[curves.length - 1];
+	},
+
+	/**
+	 * The segments contained within the path, described as SVG style path data.
+	 *
+	 * @type String
+	 * @bean
+	 */
+	getPathData: function(/* precision */) {
+		var segments = this._segments,
+			style = this._style,
+			format = Format.point,
+			precision = arguments[0] || 3,
+			parts = [];
+
+		// TODO: Add support for H/V and/or relative commands, where appropriate
+		// and resulting in shorter strings
+		function addCurve(seg1, seg2, skipLine) {
+			var point1 = seg1._point,
+				point2 = seg2._point,
+				handle1 = seg1._handleOut,
+				handle2 = seg2._handleIn;
+			if (handle1.isZero() && handle2.isZero()) {
+				if (!skipLine) {
+					// L = absolute lineto: moving to a point with drawing
+					parts.push('L' + format(point2));
+				}
+			} else {
+				// c = relative curveto: handle1, handle2 + end - start,
+				// end - start
+				var end = point2.subtract(point1);
+				parts.push('c' + format(handle1)
+						+ ' ' + format(end.add(handle2))
+						+ ' ' + format(end));
+			}
+		}
+
+		if (segments.length === 0)
+			return '';
+		parts.push('M' + format(segments[0]._point));
+		for (i = 0, l = segments.length  - 1; i < l; i++)
+			addCurve(segments[i], segments[i + 1], false);
+		// We only need to draw the connecting curve if it is not a line, and if
+		// the path is closed and has a stroke color, or if it is filled.
+		// TODO: Verify this, sound dodgy
+		if (this._closed && style._strokeColor || style._fillColor)
+			addCurve(segments[segments.length - 1], segments[0], true);
+		if (this._closed)
+			parts.push('z');
+		return parts.join('');
 	},
 
 	/**
@@ -706,14 +745,28 @@ var Path = this.Path = PathItem.extend(/** @lends Path# */{
 	},
 
 	setFullySelected: function(selected) {
+		// No need to call _selectSegments() when selected is false, since
+		// #setSelected() does that for us
+		if (selected)
+			this._selectSegments(true);
+		this.setSelected(selected);
+	},
+
+	setSelected: function(selected) {
+		// Deselect all segments when path is marked as not selected
+		if (!selected)
+			this._selectSegments(false);
+		// No need to pass true for noChildren since Path has none anyway.
+		this.base(selected);
+	},
+
+	_selectSegments: function(selected) {
 		var length = this._segments.length;
 		this._selectedSegmentState = selected
 				? length * /*#=*/ SelectionState.POINT : 0;
 		for (var i = 0; i < length; i++)
 			this._segments[i]._selectionState = selected
 					? /*#=*/ SelectionState.POINT : 0;
-		// No need to pass true for noChildren since Path has none anyway.
-		this.setSelected(selected);
 	},
 
 	_updateSelection: function(segment, oldState, newState) {
@@ -1340,11 +1393,19 @@ var Path = this.Path = PathItem.extend(/** @lends Path# */{
 		return this.getNearestLocation(point).getPoint();
 	},
 
+	hasFill: function() {
+		// If this path is part of a CompoundPath, we need to check that
+		// for fillColor too...
+		return this._style._fillColor || this._parent instanceof CompoundPath
+				&& this._parent._style._fillColor;
+	},
+
 	contains: function(point) {
 		point = Point.read(arguments);
 		// If the path is not closed, we should not bail out in case it has a
 		// fill color!
-		if (!this._closed && !this._style._fillColor
+		var hasFill = this.hasFill();
+		if (!this._closed && !hasFill
 				|| !this.getRoughBounds()._containsPoint(point))
 			return false;
 		// Note: This only works correctly with even-odd fill rule, or paths
@@ -1355,12 +1416,16 @@ var Path = this.Path = PathItem.extend(/** @lends Path# */{
 		// beam in right y-direction with the shape, and see if it's an odd
 		// number, meaning the starting point is inside the shape.
 		// http://en.wikipedia.org/wiki/Point_in_polygon
-		var curves = this.getCurves(true),
+		var curves = this.getCurves(),
+			segments = this._segments,
 			crossings = 0,
 			// Reuse one array for root-finding, give garbage collector a break
 			roots = new Array(3);
 		for (var i = 0, l = curves.length; i < l; i++)
 			crossings += curves[i].getCrossings(point, roots);
+		if (!this._closed && hasFill)
+			crossings += Curve.create(this, segments[segments.length - 1],
+					segments[0]).getCrossings(point, roots);
 		return (crossings & 1) == 1;
 	},
 
@@ -1410,7 +1475,7 @@ var Path = this.Path = PathItem.extend(/** @lends Path# */{
 		// in some cases. Simply skip fill query if we already have a matching
 		// stroke.
 		if (!(loc && loc._distance <= radius) && options.fill
-				&& style._fillColor && this.contains(point))
+				&& this.hasFill() && this.contains(point))
 			return new HitResult('fill', this);
 		// Now query stroke if we haven't already
 		if (!loc && options.stroke && radius > 0)
@@ -1439,7 +1504,9 @@ var Path = this.Path = PathItem.extend(/** @lends Path# */{
 	// SegmentPoint objects maybe seem a bit tedious but is worth the benefit in
 	// performance.
 
-	function drawHandles(ctx, segments, matrix) {
+	function drawHandles(ctx, segments, matrix, size) {
+		var half = size / 2;
+
 		function drawHandle(index) {
 			var hX = coords[index],
 				hY = coords[index + 1];
@@ -1449,7 +1516,7 @@ var Path = this.Path = PathItem.extend(/** @lends Path# */{
 				ctx.lineTo(hX, hY);
 				ctx.stroke();
 				ctx.beginPath();
-				ctx.arc(hX, hY, 1.75, 0, Math.PI * 2, true);
+				ctx.arc(hX, hY, half, 0, Math.PI * 2, true);
 				ctx.fill();
 			}
 		}
@@ -1469,13 +1536,13 @@ var Path = this.Path = PathItem.extend(/** @lends Path# */{
 			// Draw a rectangle at segment.point:
 			ctx.save();
 			ctx.beginPath();
-			ctx.rect(pX - 2, pY - 2, 4, 4);
+			ctx.rect(pX - half, pY - half, size, size);
 			ctx.fill();
 			// If the point is not selected, draw a white square that is 1 px
 			// smaller on all sides:
 			if (!selected) {
 				ctx.beginPath();
-				ctx.rect(pX - 1, pY - 1, 2, 2);
+				ctx.rect(pX - half + 1, pY - half + 1, size - 2, size - 2);
 				ctx.fillStyle = '#ffffff';
 				ctx.fill();
 			}
@@ -1600,11 +1667,8 @@ var Path = this.Path = PathItem.extend(/** @lends Path# */{
 			drawSegments(ctx, this, matrix);
 			// Now stroke it and draw its handles:
 			ctx.stroke();
-			drawHandles(ctx, this._segments, matrix);
-			// If the path has no selected segments, draw its bounds too
-			if (this._selectedSegmentState == 0) {
-				Item.drawSelectedBounds(this.getBounds(), ctx, matrix);
-			}
+			drawHandles(ctx, this._segments, matrix,
+					this._project.options.handleSize || 4);
 		}
 	};
 }, new function() { // Path Smoothing

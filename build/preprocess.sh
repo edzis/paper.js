@@ -18,22 +18,22 @@
 # are preserved or stripped and whitespaces are compressed.
 #
 # Usage:
-# preprocess.sh MODE SOURCE DEFINITIONS PREPRO_INCLUDE DESTINATION
+# preprocess.sh MODE SOURCE ARGUMENTS DESTINATION
 #
 # MODE:
 #	commented		Preprocessed, still formated and commented
 #	stripped		Preprocessed, formated but without comments
 
-VERSION=0.3
+VERSION=0.8
 DATE=$(git log -1 --pretty=format:%ad)
 
-COMMAND="./prepro.js -d '{ \"version\": $VERSION, \"date\": \"$DATE\" }' -d '$3' -i '$4' $2"
+COMMAND="./prepro.js -d '{ \"version\": $VERSION, \"date\": \"$DATE\", \"parser\": \"acorn\", \"svg\": true }' $3 $2"
 
 case $1 in
 	commented)
-		eval $COMMAND > $5
+		eval $COMMAND > $4
 		;;
 	stripped)
-		eval "$COMMAND -c" > $5
+		eval "$COMMAND -c" > $4
 		;;
 esac

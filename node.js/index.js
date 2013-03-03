@@ -21,6 +21,7 @@ __dirname = path.resolve(__dirname, '../src/');
 var context = vm.createContext({
 	options: {
 		server: true,
+		svg: true,
 		parser: 'acorn',
 		version: 'dev'
 	},
@@ -49,12 +50,10 @@ var context = vm.createContext({
 // Load Paper.js library files:
 context.include('paper.js');
 
+// Export all classes through PaperScope:
 context.Base.each(context, function(val, key) {
-	if (val && val.prototype instanceof context.Base) {
-		val._name = key;
-		// Export all classes through PaperScope:
+	if (val && val.prototype instanceof context.Base)
 		context.PaperScope.prototype[key] = val;
-	}
 });
 context.PaperScope.prototype['Canvas'] = context.Canvas;
 

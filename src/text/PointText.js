@@ -20,7 +20,8 @@
  * @extends TextItem
  */
 var PointText = this.PointText = TextItem.extend(/** @lends PointText# */{
-	_type: 'pointtext',
+	_type: 'PointText',
+
 	/**
 	 * Creates a point text item
 	 *
@@ -73,13 +74,6 @@ var PointText = this.PointText = TextItem.extend(/** @lends PointText# */{
 				ctx.strokeText(line, 0, 0);
 			ctx.translate(0, leading);
 		}
-	},
-
-	// TODO: Should we be drawing the selection like this? Perhaps a small
-	// rectangle for the starting point of the text and a colored line on
-	// the baseline for its width?
-	drawSelected: function(ctx, matrix) {
-		Item.drawSelectedBounds(this._getBounds(), ctx, matrix);
 	}
 }, new function() {
 	var measureCtx = null;

@@ -21,7 +21,11 @@
  * @extends PathItem
  */
 var CompoundPath = this.CompoundPath = PathItem.extend(/** @lends CompoundPath# */{
-	_type: 'compoundpath',
+	_type: 'CompoundPath',
+	_serializeFields: {
+		pathData: ''
+	},
+
 	/**
 	 * Creates a new compound path item and places it in the active layer.
 	 *
@@ -48,7 +52,7 @@ var CompoundPath = this.CompoundPath = PathItem.extend(/** @lends CompoundPath# 
 
 	insertChild: function(index, item, _cloning) {
 		// Only allow the insertion of paths
-		if (item._type !== 'path')
+		if (item._type !== 'Path')
 			return null;
 		item = this.base(index, item);
 		// All children except for the bottom one (first one in list) are set
@@ -112,9 +116,10 @@ var CompoundPath = this.CompoundPath = PathItem.extend(/** @lends CompoundPath# 
 	 * @bean
 	 */
 	getCurves: function() {
-		var curves = [];
-		for (var i = 0, l = this._children.length; i < l; i++)
-			curves = curves.concat(this._children[i].getCurves());
+		var children = this._children,
+			curves = [];
+		for (var i = 0, l = children.length; i < l; i++)
+			curves = curves.concat(children[i].getCurves());
 		return curves;
 	},
 
@@ -140,21 +145,44 @@ var CompoundPath = this.CompoundPath = PathItem.extend(/** @lends CompoundPath# 
 		return last && last.getFirstCurve();
 	},
 
-	contains: function(point) {
-		point = Point.read(arguments);
-		var count = 0;
+	getPathData: function(/* precision */) {
+		var children = this._children,
+			paths = [];
+		for (var i = 0, l = children.length; i < l; i++)
+			paths.push(children[i].getPathData(arguments[0]));
+		return paths.join(' ');
+	},
+
+	/**
+	 * A private method to help with both #contains() and #_hitTest().
+	 */
+	_contains: function(point) {
+		// Compound paths are a little complex: In order to determine wether a
+		// point is inside a path or not due to the even-odd rule, we need to
+		// check all the children and count how many intersect. If it's an odd
+		// number, the point is inside the path. Once we know it's inside the
+		// path, _hitTest also needs access to the first intersecting element, 
+		// for the HitResult, so we collect and return a list here.
+		var children = [];
 		for (var i = 0, l = this._children.length; i < l; i++) {
-			if (this._children[i].contains(point))
-				count++;
+			var child = this._children[i];
+			if (child.contains(point))
+				children.push(child);
 		}
-		return (count & 1) == 1;
+		return (children.length & 1) == 1 && children;
+	},
+
+	contains: function(point) {
+		return !!this._contains(Point.read(arguments));
 	},
 
 	_hitTest: function(point, options) {
-		return this.base(point, Base.merge(options, { fill: false }))
-			|| options.fill && this._style._fillColor && this.contains(point)
-				? new HitResult('fill', this)
-				: null;
+		var res = this.base(point, Base.merge(options, { fill: false }));
+		if (!res && options.fill && this._style._fillColor) {
+			res = this._contains(point);
+			res = res ? new HitResult('fill', res[0]) : null;
+		}
+		return res;
 	},
 
 	draw: function(ctx, param) {

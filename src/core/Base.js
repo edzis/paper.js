@@ -35,43 +35,42 @@ this.Base = Base.inject(/** @lends Base# */{
 	 * Renders base objects to strings in object literal notation.
 	 */
 	toString: function() {
-		return '{ ' + Base.each(this, function(value, key) {
-			// Hide internal properties even if they are enumerable
-			if (!/^_/.test(key)) {
-				var type = typeof value;
-				this.push(key + ': ' + (type === 'number'
-						? Base.formatFloat(value)
-						: type === 'string' ? "'" + value + "'" : value));
-			}
-		}, []).join(', ') + ' }';
-	},
-
-	toJson: function(options) {
-		return Base.toJson(this, options);
+		return this._id != null
+			?  (this._type || 'Object') + (this._name
+				? " '" + this._name + "'"
+				: ' @' + this._id)
+			: '{ ' + Base.each(this, function(value, key) {
+				// Hide internal properties even if they are enumerable
+				if (!/^_/.test(key)) {
+					var type = typeof value;
+					this.push(key + ': ' + (type === 'number'
+							? Format.number(value)
+							: type === 'string' ? "'" + value + "'" : value));
+				}
+			}, []).join(', ') + ' }';
 	},
 
 	/**
-	 * Sets all the properties of the passed object literal to their values on
-	 * the item it is called on, and returns the item itself.
+	 * Serializes this object to a JSON string.
+	 *
+	 * @param {Object} [options={ precision: 5 }]
 	 */
-	set: function(props) {
-		if (props) {
-			for (var key in props)
-				if (props.hasOwnProperty(key))
-					this[key] = props[key];
-		}
-		return this;
+	exportJson: function(options) {
+		return Base.exportJson(this, options);
 	},
 
 	/**
 	 * #_set() is part of the mechanism for constructors which take one object
 	 * literal describing all the properties to be set on the created instance.
-	 * It behaves the same as #set(), but only if the provided object is a plain
-	 * object. It returns undefined otherwise.
+	 * @return {Boolean} {@true if the object is a plain object}
 	 */
 	_set: function(props) {
-		if (Base.isPlainObject(props))
-			return this.set(props);
+		if (Base.isPlainObject(props)) {
+			for (var key in props)
+				if (props.hasOwnProperty(key) && key in this)
+					this[key] = props[key];
+			return true;
+		}
 	},
 
 	statics: /** @lends Base */{
@@ -229,40 +228,38 @@ this.Base = Base.inject(/** @lends Base# */{
 		 *        or a normal array.
 		 * @param {Number} start the index at which to start reading in the list
 		 * @param {String} name the property name to read from.
-		 * @param {Boolean} [filter=true] controls wether a clone of the passed
-		 * object should be kept in list._filtered, of which the consumed
-		 * properties are removed. This can be passed on e.g. to Item#set(). 
 		 */
-		readNamed: function(list, name, filter) {
-			var value = this.getNamed(list, name),
-				// value is undefined if there is no arguments object, and null
-				// if there is one, but no value is defined.
-				hasObject = value !== undefined;
-			if (hasObject && filter !== false) {
-				if (!list._filtered)
-					list._filtered = Base.merge(list[0]);
-				delete list._filtered[name];
-			}
-			return this.read(hasObject ? [value] : list);
+		readNamed: function(list, name) {
+			var value = this.getNamed(list, name);
+			// value is undefined if there is no arguments object, and null
+			// if there is one, but no value is defined.
+			return this.read(value !== undefined ? [value] : list);
 		},
 
 		/**
 		 * @return the named value if the list provides an arguments object,
-		 * null if the named value is null or undefined, and undefined if there
-		 * is no arguments object. 
+		 * {@code null} if the named value is {@code null} or {@code undefined},
+		 * and {@code undefined} if there is no arguments object. 
+		 * If no name is provided, it returns the whole arguments object.
 		 */
 		getNamed: function(list, name) {
 			var arg = list[0];
 			if (list._hasObject === undefined)
 				list._hasObject = list.length === 1 && Base.isPlainObject(arg);
 			if (list._hasObject) {
-				value = arg[name];
+				// Return the whole arguments object if no name is provided.
+				value = name ? arg[name] : arg;
 				// Convert undefined to null, to distinguish from undefined
 				// result, when there is no arguments object.
 				return value !== undefined ? value : null;
 			}
 		},
 
+		/**
+		 * Checks if the argument list has a named argument with the given name.
+		 * If name is {@code null}, it returns {@code true} if there are any
+		 * named arguments.
+		 */
 		hasNamed: function(list, name) {
 			return !!this.getNamed(list, name);
 		},
@@ -319,7 +316,7 @@ this.Base = Base.inject(/** @lends Base# */{
 						res[i] = Base.serialize(obj[i], options, compact,
 								dictionary);
 			} else if (typeof obj === 'number') {
-				res = Base.formatFloat(obj, options.precision);
+				res = Format.number(obj, options.precision);
 			} else {
 				res = obj;
 			}
@@ -378,11 +375,11 @@ this.Base = Base.inject(/** @lends Base# */{
 			return res;
 		},
 
-		toJson: function(obj, options) {
+		exportJson: function(obj, options) {
 			return JSON.stringify(Base.serialize(obj, options));
 		},
 
-		fromJson: function(json) {
+		importJson: function(json) {
 			return Base.deserialize(JSON.parse(json));
 		},
 
@@ -395,6 +392,8 @@ this.Base = Base.inject(/** @lends Base# */{
 			var amount = items && items.length,
 				append = index === undefined;
 			index = append ? list.length : index;
+			if (index > list.length)
+				index = list.length;
 			// Update _index on the items to be added first.
 			for (var i = 0; i < amount; i++)
 				items[i]._index = index + i;
@@ -453,22 +452,6 @@ this.Base = Base.inject(/** @lends Base# */{
 		 */
 		hyphenate: function(str) {
 			return str.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-		},
-
-		/**
-		 * Utility function for rendering numbers to strings at a precision of
-		 * up to the amount of fractional digits.
-		 *
-		 * @param {Number} num the number to be converted to a string
-		 * @param {Number} [precision=5] the amount of fractional digits.
-		 */
-		formatFloat: function(num, precision) {
-			precision = precision ? Math.pow(10, precision) : 100000;
-			return (Math.round(num * precision) / precision);
-		},
-
-		toFloat: function(str) {
-			return parseFloat(str, 10);
 		}
 	}
 });
