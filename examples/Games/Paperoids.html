@@ -125,6 +125,7 @@
 		path.closed = true;
 		var thrust = new Path([-8, -4], [-14, 0], [-8, 4]);
 		var group = new Group(path, thrust);
+		group.applyMatrix = true;
 		group.position = view.bounds.center;
 		return {
 			item: group,
@@ -200,16 +201,15 @@
 			},
 			
 			checkCollisions: function() {
-				var crash = -1;
+				var crashRock;
 
 				// move rocks and do a hit test
 				// between bounding rect of rocks and ship
 				for (var i = 0; i < Rocks.children.length; i++) {
 					var rock = Rocks.children[i];
 					rock.position += rock.vector;
-					if (rock.bounds.intersects(this.item.bounds)) {
-						crash = i;
-					}
+					if (rock.bounds.intersects(this.item.bounds))
+						crashRock = rock;
 					keepInView(rock);
 				}
 
@@ -230,29 +230,13 @@
 
 
 				// if bounding rect collision, do a line intersection test
-				if (crash > -1) {
-					var hit = false;
-					var pos = Rocks.children[crash].position;
-					var shipSegments = this.item.firstChild.segments;
-					var index = Rocks.children[crash].typeIndex;
-					var tempRock = Rocks.shapes[index].clone();
-					tempRock.transform(Rocks.children[crash].matrix);
+				if (crashRock) {
+					var tempRock = crashRock.symbol.definition.clone();
+					tempRock.transform(crashRock.matrix);
 					tempRock.remove();
-					var rockSegments = tempRock.segments;
-					// This code should be able to be simplified alot very soon,
-					// when Paper.js implements Path#intersects(path);
-					for (var i = 0; i < rockSegments.length - 1; i++) {
-						var rockLine = new Line(rockSegments[i].point,
-								rockSegments[i + 1].point, false);
-						var shipLine = new Line(shipSegments[0].point,
-								shipSegments[1].point, false);
-						var lineHit = shipLine.intersect(rockLine);
-						if (lineHit) {
-							hit = true;
-							break;
-						}
-					}
-					if (hit) Lives.remove();
+					var intersections = this.item.firstChild.getIntersections(tempRock);
+					if (intersections.length > 0)
+						Lives.remove();
 				}
 			}
 		};
@@ -261,24 +245,47 @@
 	var Bullets = new function() {
 		var group = new Group();
 		var children = group.children;
+
+		function checkHits(bullet) {
+			for (var r = 0; r < Rocks.children.length; r++) {
+				var rock = Rocks.children[r];
+				if (rock.bounds.contains(bullet.position) ) {
+					Score.update(rock.shapeType);
+					Rocks.explode(rock);
+					if (rock.shapeType < Rocks.TYPE_SMALL ) {
+						for (var j = 0; j < 2; j++) {
+							Rocks.add(1, rock.shapeType + 4, rock.position);
+						}
+					}
+					rock.remove();
+					bullet.remove();
+				}
+			}
+		}
+
 		return {
 			fire: function(position, angle) {
-				if (children.length > 4) return; 
-				var bullet = new Path.Circle(position, 0.5);
-				bullet.fillColor = 'white';
-				bullet.strokeWidth = 0;
-				bullet.data = {
-					vector: new Point({
-						angle: angle,
-						length: 10
-					}),
-					timeToDie: 58
-				};
-				bullet.position += bullet.data.vector;
-				group.addChild(bullet);
+				// We can only fire 5 bullets at a time:
+				if (children.length == 5)
+					return;
+				var vector = new Point({
+					angle: angle,
+					length: 10
+				});
+				var bullet = new Path.Circle({
+					center: position + vector,
+					radius: 0.5,
+					parent: group,
+					fillColor: 'white',
+					strokeWidth: 'white',
+					strokeWidth: 0,
+					data: {
+						vector: vector,
+						timeToDie: 58
+					}
+				});
 			},
 			move: function() {
-				// check for bullet hit
 				for (var i = 0; i < children.length; i++) {
 					var bullet = children[i];
 					bullet.data.timeToDie--;
@@ -286,20 +293,7 @@
 						bullet.remove();
 					} else {
 						bullet.position += bullet.data.vector;
-						for (var r = 0; r < Rocks.children.length; r++) {
-							var rock = Rocks.children[r];
-							if (rock.bounds.contains(bullet.position) ) {
-								Score.update(rock.type);
-								Rocks.explode(rock);
-								if (rock.type < Rocks.TYPE_SMALL ) {
-									for (var i = 0; i < 2; i++) {
-										Rocks.add(1, rock.type + 4, rock.position);
-									}
-								}
-								rock.remove();
-								bullet.remove();
-							}
-						}
+						checkHits(bullet);
 						keepInView(bullet);
 					}
 				}
@@ -358,8 +352,7 @@
 					angle: 360 * Math.random(),
 					length: presets.maxRockSpeed * Math.random() + 0.1
 				});
-				rock.typeIndex = randomRock;
-				rock.type = type;
+				rock.shapeType = type;
 				return rock;
 			},
 			add: function(amount, type, position) {
@@ -369,7 +362,7 @@
 				}
 			},
 			explode: function(rock) {
-				var boomRock = shapes[rock.typeIndex].clone();
+				var boomRock = rock.symbol.definition.clone();
 				boomRock.position = rock.position;
 				for (var i = 0; i < boomRock.segments.length; i++) {
 					var segmentPoint = boomRock.segments[i].point;
